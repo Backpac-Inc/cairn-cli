@@ -7,12 +7,10 @@ description: Complete instructions for agents on how to construct zero-knowledge
 
 This skill empowers AI agents to seamlessly orchestrate, execute, and verify blockchain transactions across disparate networks using Backpac's Assured RPC Gateway. Instead of dealing with raw probability models like mempools and RPC timeouts, agents can interact with a deterministic settlement execution engine.
 
-Backpac translates non-deterministic on-chain systems into exactly five risk-scored states:
-1. `SUBMITTED`
-2. `PENDING`
-3. `MINED` (Moderate Risk)
-4. `FINALIZED` (Zero Risk)
-5. `SAFE`
+Backpac translates non-deterministic on-chain systems into exactly three simplified states:
+1. `PENDING` (Intent received, awaiting ingestion)
+2. `CONFIRMED` (Intent has landed on-chain, awaiting finality threshold)
+3. `FINALIZED` (Zero Risk, immutable settlement)
 
 ## 1. Authentication (EIP-4361 Sign-In with Ethereum)
 
@@ -158,10 +156,29 @@ Once a transaction has `FINALIZED`, Backpac creates a cryptographic bundle attes
 ### Using Cairn CLI (PoT)
 
 ```bash
+# Verify the JWKS signature and local payload hash
 cairn proof verify <INTENT_ID>
+
+# Or fetch the raw verified bundle for storage
+cairn proof get <INTENT_ID> --verify-signature --raw
 ```
 
 The CLI automatically downloads the JWKS (JSON Web Key Set), matches the versions, and computes the cryptographic verification locally against the payload hash.
+
+## 6. Receiver Verification (Trustless Settlement)
+
+If you are the recipient of an intent, you can verify its validity and finality in a single step using the `receive` command. This is critical for agents acting as automated merchants or oracles.
+
+```bash
+# Verify intent for a specific recipient and minimum value
+cairn receive \
+  --poi-id <POI_ID> \
+  --recipient <YOUR_DID_OR_ADDRESS> \
+  --expect-value 1.5 \
+  --require-finalized
+```
+
+This command returns Exit Code `0` only if the intent is strictly finalized and all context matches. If the intent is still pending, it returns Exit Code `3`.
 
 ### Using Raw API (PoT)
 
