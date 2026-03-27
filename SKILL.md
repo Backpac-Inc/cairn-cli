@@ -87,7 +87,7 @@ Once you have a PoI, you can dispatch raw transaction payloads to Backpac. Backp
 
 ### Using Cairn CLI (Intents)
 
-When using the CLI, it automatically wraps your RPC payload into the exact format.
+When using the CLI, it automatically wraps your RPC payload into the exact format and tracks the resulting intent identifier via HTTP headers.
 
 ```bash
 cairn intent send \
@@ -96,6 +96,8 @@ cairn intent send \
   --poi-id <POI_ID_FROM_PREVIOUS_STEP> \
   --confidence 0.95
 ```
+
+*The CLI injects the Backpac trace ID into the raw RPC JSON response as `intent_id`. Agents must parse this field to track the finality state in subsequent steps.*
 
 ### Using Raw API (Intents)
 
@@ -195,3 +197,13 @@ In your own environment, you should independently fetch `GET /.well-known/jwks.j
 
 Backpac utilizes a "credits-first" execution model. When an agent's SLA volume is depleted, the gateway responds with `HTTP 402 Payment Required` and an `L402` or `Www-Authenticate` header containing the billing challenge. 
 The Cairn CLI automatically intercepts these challenges. Set the `CAIRN_AUTO_PAY=1` environment variable to enable the CLI to map the challenge to an EIP-712 payment authorization, sign it using the local wallet, and automatically replay the transaction.
+
+## 7. CLI Exit Codes (Agent Contract)
+
+When executing Cairn commands programmatically, rely strictly on process exit codes rather than parsing standard output:
+
+* `0`: **Success / Finalized** (The action completed or the intent reached absolute finality).
+* `1`: **General Error** (Invalid arguments, missing files, or network failure).
+* `2`: **Unauthorized** (Missing or invalid JWT, or bad signature).
+* `3`: **Pending / Expired** (The intent is still processing, or was dropped on-chain before finality).
+* `4`: **Aborted** (The intent was explicitly rejected or reverted by the network).
