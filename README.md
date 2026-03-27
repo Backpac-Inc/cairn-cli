@@ -4,20 +4,24 @@ Cairn (`cairn`) is Backpac's agent-native command-line tool designed for autonom
 
 Built entirely in Rust for maximum speed, memory safety, and cross-platform compatibility, Cairn operates completely headless (without interactive prompts) by default to favor machine readability and agent instrumentation.
 
+## Core Value Proposition: Deterministic Settlement
+
+Cairn abstracts away the non-deterministic nature of blockchains (local mempools, gas spikes, reorgs) into a structured state machine. Agents treat transactions as **Intents** that are either `PENDING`, `CONFIRMED`, or `FINALIZED`.
+
 ## Features
 
 - **Agent Identity Management**: DID-anchored authentication via EIP-4361 (Sign-in with Ethereum).
 - **PoI Engine**: Create, link, and trace structured Proofs of Intent across disparate networks.
 - **RPC Gateway**: Broadcast zero-knowledge transactions securely over Backpac's endpoint matrix.
 - **SSE Real-Time Monitoring**: Stream live state transitions for intents and globally emitted agent events.
-- **Proof Verification**: Client-side cryptography ensures institutional trust through JWKS signed bundles.
+- **Trustless Verification**: A dedicated `receive` command for counterparty agents to verify payment finality and context without custom logic.
 - **x402 Automation**: Native 402 detection and EIP-712 wallet integration for automatic payment resolution.
 
 ## Installation
 
 ### Prerequisites
 
-- Rust 1.94.0 or higher
+- Rust 1.70 or higher
 - Git
 
 ### Build from source
@@ -33,11 +37,11 @@ cargo build --release
 mv target/release/cairn ~/.local/bin/
 ```
 
-## Quick Start
+## Quick Start: Configuration & Auth
 
 ### 1. Configure the environment
 
-Set your preferred execution chain and network:
+Set your preferred execution chain and network. These can also be overridden via env vars (`CAIRN_CHAIN`, `CAIRN_NETWORK`) or global flags.
 
 ```bash
 cairn config set chain ethereum
@@ -46,64 +50,98 @@ cairn config set network mainnet
 
 ### 2. Authenticate
 
-Get a challenge payload, sign it with your wallet private key, and authenticate to receive a JWT session.
-
-If you have your private key saved locally (e.g. at `~/.backpac/mykey.pem`), you can automate the flow:
+Cairn uses EIP-4361 (Sign-In with Ethereum). If you have your private key saved locally (e.g. at `~/.backpac/mykey.pem`), the flow is fully automated:
 
 ```bash
-# Request challenge
-CHALLENGE=$(cairn auth challenge --wallet 0xYOUR_WALLET --chain eip155:1 --did did:key:z6MkYOURDID)
-NONCE=$(echo $CHALLENGE | jq -r .nonce)
-
-# Connect and sign
 cairn auth connect \
   --wallet 0xYOUR_WALLET \
   --chain eip155:1 \
   --did did:key:z6MkYOURDID \
-  --nonce $NONCE \
-  --signature "" \
   --key-file ~/.backpac/mykey.pem
 ```
 
 *Your successful login JWT is securely stored at `~/.backpac/credentials.json`.*
 
-### 3. Dispatch an RPC Intent
+---
 
-Initialize a Proof of Intent tracker, and dispatch a JSON-RPC call linked to it:
+## Agent Workflow: The SENDER
 
+The Sender agent is responsible for initializing a Proof of Intent (PoI) and fulfilling it via one or more execution intents.
+
+### 1. Check Pre-requisites
+Ensure the agent has sufficient balance to execute:
 ```bash
-# Initialize a PoI
-POI_ID=$(cairn poi create --ttl 600 | jq -r .id)
+cairn rpc balance
+```
 
-# Dispatch intent with PoI binding
+### 2. Initialize Settlement
+Create a PoI which acts as the overarching session:
+```bash
+POI_ID=$(cairn poi create --ttl 600 | jq -r .id)
+```
+
+### 3. Dispatch Intent
+Submit the transaction payload bound to the PoI. 
+```bash
 cairn intent send \
   --method eth_sendRawTransaction \
   --params '["0xSignedTxData"]' \
   --poi-id $POI_ID \
-  --confidence 0.95
+  --confidence 0.99
 ```
 
-### 4. Wait, Watch, and Verify
+### 4. Wait for Finality
+Block until the transaction moves to a `FINALIZED` state:
+```bash
+cairn intent wait <INTENT_ID> --timeout 120
+```
 
-You can block execution until the transaction lands on-chain, stream live updates, and verify the cryptographic signature of the receipt.
+---
+
+## Agent Workflow: The RECEIVER
+
+The Receiver agent uses Cairn to verify that a counterparty has fulfilled their promise trustlessly.
+
+### 1. The Trustless Handshake
+Verify that a PoI exists, is finalized (SETTLED), and matches the expected payment context (recipient and value):
 
 ```bash
-# Wait up to 120 seconds, polling every 2 seconds
-cairn intent wait <INTENT_ID> --timeout 120 --interval 2
-
-# Stream live status updates via SSE
-cairn watch intent <INTENT_ID>
-
-# Stream all global agent notifications and events via SSE
-cairn watch agent
-
-# Verify Backpac's JWKS signature on the resulting Proof of Transport bundle
-cairn proof verify <INTENT_ID>
+cairn receive \
+  --poi-id <POI_ID> \
+  --recipient did:key:z6Mk... \
+  --expect-value "1.5" \
+  --require-finalized
 ```
 
-## Global Configuration & Flags
+*Cairn returns **Exit Code 0** if and only if all conditions are met.*
 
-Every command supports global modifiers for easy execution overriding:
+### 2. Proof Audit & Storage
+Fetch the full cryptographic Proof of Transport (PoT) bundle for long-term audit logs:
+
+```bash
+# Fetch raw JSON bundle after local signature verification
+cairn proof get <INTENT_ID> --verify-signature --raw
+```
+
+---
+
+## Advanced Features
+
+### SSE Monitoring
+Stream live state transitions for a specific intent or all account-wide events:
+```bash
+cairn watch intent <INTENT_ID>
+cairn watch agent
+```
+
+### Automatic x402 Payments
+Enable automatic L402 challenge resolution. If an RPC call returns a 402, Cairn will sign and pay the credit invoice using your local wallet:
+```bash
+export CAIRN_AUTO_PAY=1
+cairn intent send ...
+```
+
+## Global Flags & Modifiers
 
 | Flag | Env Var | Description |
 |:---|:---|:---|
@@ -112,27 +150,97 @@ Every command supports global modifiers for easy execution overriding:
 | `--api-url <URL>` | `BACKPAC_API_URL` | Temporarily overrides API location. |
 | `--jwt <TOKEN>` | `BACKPAC_JWT` | Submits the provided token instead of local state. |
 
+## 5. Command Hierarchy
+
+### `auth`
+
+| Command | Arguments | Description |
+|:---|:---|:---|
+| `auth challenge` | `--wallet`, `--chain`, `--did` | Request an EIP-4361 signing challenge payload. |
+| `auth connect` | `--wallet`, `--chain`, `--did`, `--nonce`, `--signature`, `[--key_file]` | Submit challenge signature. Saves JWT to `credentials.json`. Auto-signs if `--key_file` provided. |
+| `auth refresh` | None | Re-mints JWT using the currently valid JWT. Updates `credentials.json`. |
+| `auth status` | None | Checks token health, expiry, and scopes. |
+
+### `identity`
+
+| Command | Arguments | API Route | Description |
+|:---|:---|:---|:---|
+| `identity register` | `--did`, `--wallet`, `--public-key`, `[--display-name]` | `POST /v1/agents/identity` | Anchor a DID to the wallet. |
+| `identity rotate` | `--did`, `--current-key`, `--new-key` | `PUT /v1/agents/identity/rotate` | Rotate the Ed25519 signing key for the DID. |
+| `identity get` | `<did>` | `GET /v1/agents/identity/:did` | Look up state and current key for a registered DID. |
+
+### `poi` (Proof of Intent)
+
+| Command | Arguments | API Route | Description |
+|:---|:---|:---|:---|
+| `poi create` | `[--chain]`, `[--network]`, `[--parent]`, `[--max-depth]`, `[--ttl]`, `[--metadata]` | `POST /v1/pois` | Create a new Proof of Intent tracking record. |
+| `poi get` | `<poi_id>` | `GET /v1/pois/:poi_id` | Retrieve an existing PoI. |
+
+### `intent`
+
+| Command | Arguments | API Route | Description |
+|:---|:---|:---|:---|
+| `intent send` | `--method`, `--params`, `[--poi-id]`, `[--confidence]`, `[--id]` | `POST /` (RPC Route) | Submit JSON-RPC payload. Binds to PoI if `--poi-id` provided (via `X-Backpac-Poi-Id` header). |
+| `intent status` | `<intent_id>` | `GET /v1/intents/:intent_id` | Check state of a specific execution intent. |
+| `intent verify` | `<intent_id>`, `[--receiver-did]`, `[--min-confidence]` | `GET /v1/intents/:intent_id/verify` | Receiver-side verification endpoint for a settled PoI. |
+| `intent wait` | `<intent_id>`, `[--interval]`, `[--timeout]` | Polling `GET /v1/intents/:intent_id` | Client-side poll until status is `FINALIZED`, `ABORTED`, or `EXPIRED`. |
+| `intent list` | `[--status]`, `[--since]`, `[--limit]` | `GET /v1/intents` | List and filter authenticated agent's intents. |
+
+### `watch`
+
+| Command | Arguments | API Route | Description |
+|:---|:---|:---|:---|
+| `watch intent` | `<intent_id>` | `GET /v1/intents/:intent_id/stream` | Stream live SSE state transitions for a specific intent. |
+| `watch agent` | None | `GET /v1/agents/stream` | Stream live SSE account-wide agent events and notifications. |
+
+### `proof`
+
+| Command | Arguments | API Route | Description |
+|:---|:---|:---|:---|
+| `proof get` | `<intent_id>`, `[--include-telemetry]`, `[--include-children]`, `[--verify-signature]`, `[--raw]` | `GET /v1/proofs/:intent_id` | Fetches the structured cryptographic PoT bundle. |
+| `proof verify` | `<intent_id>` | `GET /v1/proofs/:intent_id` + `GET /.well-known/jwks.json` | Fetches bundle, fetches JWKS from issuer, performs local Ed25519 cryptographic signature verification against the payload hash. |
+
+### `receive`
+
+| Command | Arguments | API Route | Description |
+|:---|:---|:---|:---|
+| `receive` | `--poi-id`, `[--from]`, `[--recipient]`, `[--expect-value]`, `[--require-finalized]` | `GET /v1/pois/:poi_id` | Combined fetch and verify step for receiver agents. Validates sender, recipient, and value contexts. |
+
+### `config`
+
+| Command | Arguments | API Route | Description |
+|:---|:---|:---|:---|
+| `config set` | `<key>`, `<value>` | Local config.json | Edits values in `~/.backpac/config.json`. |
+| `config get` | `[<key>]` | Local config.json | Fetches a specific value, or dumps the full configuration structure. |
+
 ## Exit Codes
 
-Cairn translates all system boundaries into deterministic exit codes, allowing agent environments to securely evaluate failure models.
+Errors must be strictly mapped from HTTP responses to integer exit codes to allow programmatic behavior.
 
-| Code | Meaning |
-|:---:|:---|
-| 0 | Success |
-| 1 | General error (IO/Serialization) |
-| 2 | Invalid user input |
-| 3 | Authentication Error |
-| 4 | Missing resource (404) |
-| 6 | Intent Expired |
-| 7 | Intent Aborted |
-| 9 | CLI Timeout |
-| 15 | Insufficient Funds / x402 Trigger |
+| Condition / Meaning | Exit Code | HTTP Mapping |
+|:---|:---:|:---|
+| Success | `0` | `200`, `201`, `204` |
+| General Error (Serialization, IO) | `1` | `500` or OS-level errors |
+| Value Mismatch | `2` | PoI context validation failure |
+| Not Finalized | `3` | `require-finalized` set but state is pending |
+| Forbidden / Unauthorized | `4` | `401 Unauthorized` / `403 Forbidden` |
+| Not Found | `5` | `404 Not Found` |
+| Conflict | `6` | `409 Conflict` |
+| Intent Expired | `7` | `410 Gone` (if message contains "expired") |
+| Intent Aborted | `8` | `410 Gone` |
+| Chain Depth Exceeded | `9` | Payload constraint check |
+| Operation Timeout | `10` | `intent wait` duration exceeded |
+| Signature Verification Error | `11` | Cryptographic match failure |
+| PoT Not Ready | `12` | Proof missing signatures/payloads |
+| Network Error | `13` | Unreachable endpoint, connection reset |
+| Token Expired | `14` | `401 Unauthorized` (if message contains "expired") |
+| Challenge Expired | `15` | Spec constraint |
+| Insufficient Funds / x402 | `16` | `402 Payment Required` |
 
-See `CLI_DESIGN.md` for the full 16-code mapping.
+
+
 
 ## Development
-
-Run tests:
 
 ```bash
 cargo test
