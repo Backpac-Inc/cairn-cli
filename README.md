@@ -4,7 +4,7 @@ Cairn (`cairn`) is Backpac's agent-native command-line tool designed for autonom
 
 Built entirely in Rust for maximum speed, memory safety, and cross-platform compatibility, Cairn operates completely headless (without interactive prompts) by default to favor machine readability and agent instrumentation.
 
-## Core Value Proposition: Deterministic Settlement
+## Deterministic Settlement
 
 Cairn abstracts away the non-deterministic nature of blockchains (local mempools, gas spikes, reorgs) into a structured state machine. Agents treat transactions as **Intents** that are either `PENDING`, `CONFIRMED`, or `FINALIZED`.
 
@@ -150,7 +150,7 @@ cairn intent send ...
 | `--api-url <URL>` | `BACKPAC_API_URL` | Temporarily overrides API location. |
 | `--jwt <TOKEN>` | `BACKPAC_JWT` | Submits the provided token instead of local state. |
 
-## 5. Command Hierarchy
+## Command Hierarchy
 
 ### `auth`
 
@@ -163,52 +163,52 @@ cairn intent send ...
 
 ### `identity`
 
-| Command | Arguments | API Route | Description |
-|:---|:---|:---|:---|
-| `identity register` | `--did`, `--wallet`, `--public-key`, `[--display-name]` | `POST /v1/agents/identity` | Anchor a DID to the wallet. |
-| `identity rotate` | `--did`, `--current-key`, `--new-key` | `PUT /v1/agents/identity/rotate` | Rotate the Ed25519 signing key for the DID. |
-| `identity get` | `<did>` | `GET /v1/agents/identity/:did` | Look up state and current key for a registered DID. |
+| Command | Arguments | Description |
+|:---|:---|:---|
+| `identity register` | `--did`, `--wallet`, `--public-key`, `[--display-name]` | Anchor a DID to the wallet. |
+| `identity rotate` | `--did`, `--current-key`, `--new-key` | Rotate the Ed25519 signing key for the DID. |
+| `identity get` | `<did>` | Look up state and current key for a registered DID. |
 
 ### `poi` (Proof of Intent)
 
-| Command | Arguments | API Route | Description |
-|:---|:---|:---|:---|
-| `poi create` | `[--chain]`, `[--network]`, `[--parent]`, `[--max-depth]`, `[--ttl]`, `[--metadata]` | `POST /v1/pois` | Create a new Proof of Intent tracking record. |
-| `poi get` | `<poi_id>` | `GET /v1/pois/:poi_id` | Retrieve an existing PoI. |
+| Command | Arguments | Description |
+|:---|:---|:---|
+| `poi create` | `[--chain]`, `[--network]`, `[--parent]`, `[--max-depth]`, `[--ttl]`, `[--metadata]` | Create a new Proof of Intent tracking record. |
+| `poi get` | `<poi_id>` | Retrieve an existing PoI. |
 
 ### `intent`
 
-| Command | Arguments | API Route | Description |
-|:---|:---|:---|:---|
-| `intent send` | `--method`, `--params`, `[--poi-id]`, `[--confidence]`, `[--id]` | `POST /` (RPC Route) | Submit JSON-RPC payload. Binds to PoI if `--poi-id` provided (via `X-Backpac-Poi-Id` header). |
-| `intent status` | `<intent_id>` | `GET /v1/intents/:intent_id` | Check state of a specific execution intent. |
-| `intent verify` | `<intent_id>`, `[--receiver-did]`, `[--min-confidence]` | `GET /v1/intents/:intent_id/verify` | Receiver-side verification endpoint for a settled PoI. |
-| `intent wait` | `<intent_id>`, `[--interval]`, `[--timeout]` | Polling `GET /v1/intents/:intent_id` | Client-side poll until status is `FINALIZED`, `ABORTED`, or `EXPIRED`. |
+| Command | Arguments | Description |
+|:---|:---|:---|
+| `intent send` | `--method`, `--params`, `[--poi-id]`, `[--confidence]`, `[--id]` | Submit JSON-RPC payload. Binds to PoI if `--poi-id` provided (via `X-Backpac-Poi-Id` header). |
+| `intent status` | `<intent_id>` | Check state of a specific execution intent. |
+| `intent verify` | `<intent_id>`, `[--receiver-did]`, `[--min-confidence]` | Receiver-side verification endpoint for a settled PoI. |
+| `intent wait` | `<intent_id>`, `[--interval]`, `[--timeout]` | Client-side poll until status is `FINALIZED`, `ABORTED`, or `EXPIRED`. |
 | `intent list` | `[--status]`, `[--since]`, `[--limit]` | `GET /v1/intents` | List and filter authenticated agent's intents. |
 
 ### `watch`
 
-| Command | Arguments | API Route | Description |
-|:---|:---|:---|:---|
-| `watch intent` | `<intent_id>` | `GET /v1/intents/:intent_id/stream` | Stream live SSE state transitions for a specific intent. |
-| `watch agent` | None | `GET /v1/agents/stream` | Stream live SSE account-wide agent events and notifications. |
+| Command | Arguments | Description |
+|:---|:---|:---|
+| `watch intent` | `<intent_id>` | Stream live SSE state transitions for a specific intent. |
+| `watch agent` | None | Stream live SSE account-wide agent events and notifications. |
 
 ### `proof`
 
-| Command | Arguments | API Route | Description |
-|:---|:---|:---|:---|
-| `proof get` | `<intent_id>`, `[--include-telemetry]`, `[--include-children]`, `[--verify-signature]`, `[--raw]` | `GET /v1/proofs/:intent_id` | Fetches the structured cryptographic PoT bundle. |
-| `proof verify` | `<intent_id>` | `GET /v1/proofs/:intent_id` + `GET /.well-known/jwks.json` | Fetches bundle, fetches JWKS from issuer, performs local Ed25519 cryptographic signature verification against the payload hash. |
+| Command | Arguments | Description |
+|:---|:---|:---|
+| `proof get` | `<intent_id>`, `[--include-telemetry]`, `[--include-children]`, `[--verify-signature]`, `[--raw]` | Fetches the structured cryptographic PoT bundle. |
+| `proof verify` | `<intent_id>` | Fetches bundle, fetches JWKS from issuer, performs local Ed25519 cryptographic signature verification against the payload hash. |
 
 ### `receive`
 
-| Command | Arguments | API Route | Description |
-|:---|:---|:---|:---|
-| `receive` | `--poi-id`, `[--from]`, `[--recipient]`, `[--expect-value]`, `[--require-finalized]` | `GET /v1/pois/:poi_id` | Combined fetch and verify step for receiver agents. Validates sender, recipient, and value contexts. |
+| Command | Arguments | Description |
+|:---|:---|:---|
+| `receive` | `--poi-id`, `[--from]`, `[--recipient]`, `[--expect-value]`, `[--require-finalized]` | Combined fetch and verify step for receiver agents. Validates sender, recipient, and value contexts. |
 
 ### `config`
 
-| Command | Arguments | API Route | Description |
+| Command | Arguments | Description |
 |:---|:---|:---|:---|
 | `config set` | `<key>`, `<value>` | Local config.json | Edits values in `~/.backpac/config.json`. |
 | `config get` | `[<key>]` | Local config.json | Fetches a specific value, or dumps the full configuration structure. |
