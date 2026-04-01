@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
+  "skills": [
+    {
+      "name": "cairn-cli",
+      "type": "skill-md",
+      "description": "Backpac Agent-Native CLI for autonomous settlement workflow.",
+      "url": "/.well-known/agent-skills/cairn-cli/SKILL.md",
+      "digest": "sha256:514b4c08f216d2e8c07fbb8f458c39bccf2af054b647b212e8980e3d15df5eaf"
+    }
+  ]
+}
